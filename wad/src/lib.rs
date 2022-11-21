@@ -24,6 +24,8 @@ pub enum WadError {
     InvalidLumpName(FromUtf8Error),
     #[error("trailing bytes")]
     TrailingBytes,
+    #[error("early EOF")]
+    UnexpectedEof,
     #[error("{0}")]
     Other(String),
 }
@@ -167,12 +169,16 @@ impl Wad {
     fn open(path: &Path) -> Result<Wad, WadError> {
         let mut f = File::open(path).map_err(WadError::CouldntReadHeader)?;
 
-        let header = WadHeader::deserialize(&mut f)?;
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf)
+            .map_err(WadError::CouldntReadHeader)?;
+        let mut de = wad_de::WadDeserializer::from_bytes(&buf);
+        let header = WadHeader::deserialize(&mut de)?;
         let mut directory = Vec::with_capacity(header.num_lumps as usize);
         f.seek(SeekFrom::Start(header.directory_offset as u64))
             .map_err(WadError::CouldntReadHeader)?;
         for _ in 0..header.num_lumps {
-            directory.push(DirectoryEntry::new(&mut f)?);
+            directory.push(DirectoryEntry::deserialize(&mut de)?);
         }
 
         Ok(Wad {
