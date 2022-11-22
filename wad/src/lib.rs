@@ -46,6 +46,9 @@ impl WadHeader {
         let mut identification = [0; 4];
         f.read_exact(&mut identification)
             .map_err(WadError::CouldntReadHeader)?;
+        if ![b"IWAD", b"PWAD"].contains(&&identification) {
+            return Err(WadError::InvalidMagicNumber(identification));
+        }
         let num_lumps = f
             .read_i32::<LittleEndian>()
             .map_err(WadError::CouldntReadHeader)?;
