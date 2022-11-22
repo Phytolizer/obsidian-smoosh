@@ -33,8 +33,6 @@ type WadResult<T> = Result<T, WadError>;
 /// The header of a WAD file. Contains overview information about the file.
 #[derive(Debug)]
 struct WadHeader {
-    /// The magic number, "IWAD" or "PWAD".
-    identification: [u8; 4],
     /// The number of lumps in the WAD.
     num_lumps: i32,
     /// The offset to the start of the directory.
@@ -56,7 +54,6 @@ impl WadHeader {
             .read_i32::<LittleEndian>()
             .map_err(WadError::CouldntReadHeader)?;
         Ok(WadHeader {
-            identification,
             num_lumps,
             directory_offset,
         })
@@ -66,11 +63,31 @@ impl WadHeader {
 #[derive(Debug)]
 pub struct Directory(Vec<DirectoryEntry>);
 
+impl Directory {
+    pub fn iter(&self) -> DirectoryIter {
+        DirectoryIter {
+            inner: self.0.iter(),
+        }
+    }
+}
+
+pub struct DirectoryIter<'a> {
+    inner: std::slice::Iter<'a, DirectoryEntry>,
+}
+
+impl<'a> Iterator for DirectoryIter<'a> {
+    type Item = &'a DirectoryEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
 #[derive(Debug)]
-struct DirectoryEntry {
-    offset: i32,
-    size: i32,
-    name: String,
+pub struct DirectoryEntry {
+    pub offset: i32,
+    pub size: i32,
+    pub name: String,
 }
 
 impl DirectoryEntry {
@@ -91,7 +108,7 @@ impl DirectoryEntry {
 }
 
 #[derive(Debug)]
-struct Lump(Vec<u8>);
+pub struct Lump(Vec<u8>);
 
 impl Lump {
     fn new(f: &mut File, entry: &DirectoryEntry) -> Result<Lump, WadError> {
@@ -108,9 +125,8 @@ impl Lump {
 /// A WAD file.
 #[derive(Debug)]
 pub struct Wad {
-    header: WadHeader,
     pub directory: Directory,
-    lumps: Vec<Lump>,
+    pub lumps: Vec<Lump>,
 }
 
 impl Wad {
@@ -136,7 +152,6 @@ impl Wad {
         }
 
         Ok(Wad {
-            header,
             directory: Directory(directory),
             lumps,
         })
