@@ -2,16 +2,20 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::io::Write;
 use std::path::Path;
 use std::string::FromUtf8Error;
 
 use byteorder::LittleEndian;
 use byteorder::ReadBytesExt;
+use byteorder::WriteBytesExt;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WadError {
     #[error("failed to read header: {0}")]
     CouldntReadHeader(std::io::Error),
+    #[error("failed to write header: {0}")]
+    CouldntWriteHeader(std::io::Error),
     #[error("failed to read directory entry: {0}")]
     CouldntReadEntry(std::io::Error),
     #[error("failed to read lump: {0}")]
@@ -58,6 +62,15 @@ impl WadHeader {
             directory_offset,
         })
     }
+
+    fn write(&self, f: &mut File) -> WadResult<()> {
+        f.write_all(b"PWAD").map_err(WadError::CouldntWriteHeader)?;
+        f.write_i32::<LittleEndian>(self.num_lumps)
+            .map_err(WadError::CouldntWriteHeader)?;
+        f.write_i32::<LittleEndian>(self.directory_offset)
+            .map_err(WadError::CouldntWriteHeader)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -68,6 +81,13 @@ impl Directory {
         DirectoryIter {
             inner: self.0.iter(),
         }
+    }
+
+    pub fn write(&self, f: &mut File) -> WadResult<()> {
+        for entry in &self.0 {
+            entry.write(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -105,6 +125,16 @@ impl DirectoryEntry {
             .map_err(WadError::InvalidLumpName)?;
         Ok(DirectoryEntry { offset, size, name })
     }
+
+    fn write(&self, f: &mut File) -> WadResult<()> {
+        f.write_i32::<LittleEndian>(self.offset)
+            .map_err(WadError::CouldntWriteHeader)?;
+        f.write_i32::<LittleEndian>(self.size)
+            .map_err(WadError::CouldntWriteHeader)?;
+        f.write_all(self.name.as_bytes())
+            .map_err(WadError::CouldntWriteHeader)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -119,6 +149,11 @@ impl Lump {
             .map_err(WadError::CouldntReadLump)?;
 
         Ok(Lump(bytes))
+    }
+
+    fn write(&self, f: &mut File) -> WadResult<()> {
+        f.write_all(&self.0).map_err(WadError::CouldntWriteHeader)?;
+        Ok(())
     }
 }
 
@@ -155,5 +190,32 @@ impl Wad {
             directory: Directory(directory),
             lumps,
         })
+    }
+
+    pub fn write(&self, path: &Path) -> WadResult<()> {
+        let mut f = File::create(path).map_err(WadError::CouldntWriteHeader)?;
+        let header = WadHeader {
+            num_lumps: self.directory.0.len() as i32,
+            directory_offset: 12,
+        };
+        header.write(&mut f)?;
+
+        let mut offset = 12 + self.directory.0.len() * 16;
+        for lump in &self.lumps {
+            let entry = DirectoryEntry {
+                offset: offset.try_into().unwrap(),
+                size: lump.0.len() as i32,
+                name: String::from(""),
+            };
+            entry.write(&mut f)?;
+            offset += lump.0.len();
+        }
+
+        self.directory.write(&mut f)?;
+        for lump in &self.lumps {
+            lump.write(&mut f)?;
+        }
+
+        Ok(())
     }
 }
