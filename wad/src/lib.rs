@@ -147,7 +147,10 @@ impl DirectoryEntry {
 }
 
 #[derive(Debug)]
-pub struct Lump(Vec<u8>);
+pub struct Lump {
+    name: String,
+    data: Vec<u8>,
+}
 
 impl Lump {
     fn new(f: &mut File, entry: &DirectoryEntry) -> Result<Lump, WadError> {
@@ -157,11 +160,15 @@ impl Lump {
         f.read_exact(&mut bytes)
             .map_err(WadError::CouldntReadLump)?;
 
-        Ok(Lump(bytes))
+        Ok(Lump {
+            name: entry.name.clone(),
+            data: bytes,
+        })
     }
 
     fn write(&self, f: &mut File) -> WadResult<()> {
-        f.write_all(&self.0).map_err(WadError::CouldntWriteLump)?;
+        f.write_all(&self.data)
+            .map_err(WadError::CouldntWriteLump)?;
         Ok(())
     }
 }
@@ -201,7 +208,8 @@ impl Wad {
         })
     }
 
-    pub fn write(&self, path: &Path) -> WadResult<()> {
+    pub fn write<P: AsRef<Path>>(&self, path: P) -> WadResult<()> {
+        let path = path.as_ref();
         let mut f = File::create(path).map_err(WadError::CouldntWriteHeader)?;
         let header = WadHeader {
             num_lumps: self.directory.0.len() as i32,
@@ -213,11 +221,11 @@ impl Wad {
         for lump in &self.lumps {
             let entry = DirectoryEntry {
                 offset: offset.try_into().unwrap(),
-                size: lump.0.len() as i32,
-                name: String::from(""),
+                size: lump.data.len() as i32,
+                name: lump.name.clone(),
             };
             entry.write(&mut f)?;
-            offset += lump.0.len();
+            offset += lump.data.len();
         }
 
         self.directory.write(&mut f)?;
