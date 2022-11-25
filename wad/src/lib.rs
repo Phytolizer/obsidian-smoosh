@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io::Cursor;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
@@ -18,8 +19,12 @@ pub enum WadError {
     CouldntWriteHeader(std::io::Error),
     #[error("failed to read directory entry: {0}")]
     CouldntReadEntry(std::io::Error),
+    #[error("failed to write directory entry: {0}")]
+    CouldntWriteEntry(std::io::Error),
     #[error("failed to read lump: {0}")]
     CouldntReadLump(std::io::Error),
+    #[error("failed to write lump: {0}")]
+    CouldntWriteLump(std::io::Error),
     #[error("invalid magic number: {0:?}")]
     InvalidMagicNumber([u8; 4]),
     #[error("invalid lump name: {0}")]
@@ -128,11 +133,15 @@ impl DirectoryEntry {
 
     fn write(&self, f: &mut File) -> WadResult<()> {
         f.write_i32::<LittleEndian>(self.offset)
-            .map_err(WadError::CouldntWriteHeader)?;
+            .map_err(WadError::CouldntWriteEntry)?;
         f.write_i32::<LittleEndian>(self.size)
-            .map_err(WadError::CouldntWriteHeader)?;
-        f.write_all(self.name.as_bytes())
-            .map_err(WadError::CouldntWriteHeader)?;
+            .map_err(WadError::CouldntWriteEntry)?;
+        let mut cursor = Cursor::new([0u8; 8]);
+        cursor
+            .write_all(self.name.as_bytes())
+            .map_err(WadError::CouldntWriteEntry)?;
+        f.write_all(&cursor.into_inner())
+            .map_err(WadError::CouldntWriteEntry)?;
         Ok(())
     }
 }
@@ -152,7 +161,7 @@ impl Lump {
     }
 
     fn write(&self, f: &mut File) -> WadResult<()> {
-        f.write_all(&self.0).map_err(WadError::CouldntWriteHeader)?;
+        f.write_all(&self.0).map_err(WadError::CouldntWriteLump)?;
         Ok(())
     }
 }
