@@ -228,7 +228,6 @@ impl Wad {
             offset += lump.data.len();
         }
 
-        self.directory.write(&mut f)?;
         for lump in &self.lumps {
             lump.write(&mut f)?;
         }
