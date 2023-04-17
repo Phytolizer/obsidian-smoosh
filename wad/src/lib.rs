@@ -11,6 +11,10 @@ use std::string::FromUtf8Error;
 use byteorder::LittleEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
+use zip::ZipArchive;
+
+trait FileLike: std::io::Read + std::io::Seek {}
+impl<T> FileLike for T where T: Read + Seek {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum WadError {
@@ -50,7 +54,7 @@ struct WadHeader {
 }
 
 impl WadHeader {
-    fn new(f: &mut File) -> WadResult<Self> {
+    fn new(f: &mut dyn FileLike) -> WadResult<Self> {
         let mut identification = [0; 4];
         f.read_exact(&mut identification)
             .map_err(WadError::CouldntReadHeader)?;
@@ -117,7 +121,7 @@ pub struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
-    fn new(f: &mut File) -> WadResult<Self> {
+    fn new(f: &mut dyn FileLike) -> WadResult<Self> {
         let offset = f
             .read_i32::<LittleEndian>()
             .map_err(WadError::CouldntReadEntry)?;
@@ -154,7 +158,7 @@ pub struct Lump {
 }
 
 impl Lump {
-    fn new(f: &mut File, entry: &DirectoryEntry) -> Result<Lump, WadError> {
+    fn new(f: &mut dyn FileLike, entry: &DirectoryEntry) -> Result<Lump, WadError> {
         let mut bytes = vec![0; entry.size as usize];
         f.seek(SeekFrom::Start(entry.offset as u64))
             .map_err(WadError::CouldntReadLump)?;
@@ -189,14 +193,35 @@ impl Wad {
         P: AsRef<Path>,
     {
         let path = path.as_ref();
-        let mut f = File::open(path).map_err(WadError::CouldntReadHeader)?;
-
-        let header = WadHeader::new(&mut f)?;
+        let mut f: Box<dyn FileLike> = 'check_and_unzip: {
+            let f = File::open(path).map_err(WadError::CouldntReadHeader)?;
+            'check_zip: {
+                if let Ok(mut archive) = ZipArchive::new(f) {
+                    let wadname = 'find_wad: {
+                        for name in archive.file_names() {
+                            if name.ends_with(".wad") {
+                                break 'find_wad name.to_string();
+                            }
+                        }
+                        break 'check_zip;
+                    };
+                    let mut bytes = Vec::new();
+                    archive
+                        .by_name(&wadname)
+                        .unwrap()
+                        .read_to_end(&mut bytes)
+                        .map_err(WadError::CouldntReadHeader)?;
+                    break 'check_and_unzip Box::new(Cursor::new(bytes));
+                }
+            }
+            Box::new(File::open(path).unwrap())
+        };
+        let header = WadHeader::new(f.as_mut())?;
         let mut directory = Vec::with_capacity(header.num_lumps as usize);
         f.seek(SeekFrom::Start(header.directory_offset as u64))
             .map_err(WadError::CouldntReadHeader)?;
         for _ in 0..header.num_lumps {
-            directory.push(DirectoryEntry::new(&mut f)?);
+            directory.push(DirectoryEntry::new(f.as_mut())?);
         }
 
         let mut lumps = Vec::with_capacity(header.num_lumps as usize);
