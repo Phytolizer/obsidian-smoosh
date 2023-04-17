@@ -12,6 +12,8 @@ use byteorder::LittleEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 use zip::ZipArchive;
+use zip::ZipWriter;
+use zip::write::FileOptions;
 
 trait FileLike: std::io::Read + std::io::Seek {}
 impl<T> FileLike for T where T: Read + Seek {}
@@ -73,7 +75,7 @@ impl WadHeader {
         })
     }
 
-    fn write(&self, f: &mut File) -> WadResult<()> {
+    fn write(&self, f: &mut dyn Write) -> WadResult<()> {
         f.write_all(b"PWAD").map_err(WadError::CouldntWriteHeader)?;
         f.write_i32::<LittleEndian>(self.num_lumps)
             .map_err(WadError::CouldntWriteHeader)?;
@@ -136,7 +138,7 @@ impl DirectoryEntry {
         Ok(DirectoryEntry { offset, size, name })
     }
 
-    fn write(&self, f: &mut File) -> WadResult<()> {
+    fn write(&self, f: &mut dyn Write) -> WadResult<()> {
         f.write_i32::<LittleEndian>(self.offset)
             .map_err(WadError::CouldntWriteEntry)?;
         f.write_i32::<LittleEndian>(self.size)
@@ -171,7 +173,7 @@ impl Lump {
         })
     }
 
-    fn write(&self, f: &mut File) -> WadResult<()> {
+    fn write(&self, f: &mut dyn Write) -> WadResult<()> {
         f.write_all(&self.data)
             .map_err(WadError::CouldntWriteLump)?;
         Ok(())
@@ -184,6 +186,7 @@ pub struct Wad {
     pub directory: Directory,
     pub lumps: Vec<Lump>,
     pub lump_index: HashMap<String, usize>,
+    pub was_zip: bool,
 }
 
 impl Wad {
@@ -193,7 +196,7 @@ impl Wad {
         P: AsRef<Path>,
     {
         let path = path.as_ref();
-        let mut f: Box<dyn FileLike> = 'check_and_unzip: {
+        let (mut f, was_zip): (Box<dyn FileLike>, bool) = 'check_and_unzip: {
             let f = File::open(path).map_err(WadError::CouldntReadHeader)?;
             'check_zip: {
                 if let Ok(mut archive) = ZipArchive::new(f) {
@@ -211,10 +214,10 @@ impl Wad {
                         .unwrap()
                         .read_to_end(&mut bytes)
                         .map_err(WadError::CouldntReadHeader)?;
-                    break 'check_and_unzip Box::new(Cursor::new(bytes));
+                    break 'check_and_unzip (Box::new(Cursor::new(bytes)), true);
                 }
             }
-            Box::new(File::open(path).unwrap())
+            (Box::new(File::open(path).unwrap()), false)
         };
         let header = WadHeader::new(f.as_mut())?;
         let mut directory = Vec::with_capacity(header.num_lumps as usize);
@@ -235,17 +238,25 @@ impl Wad {
             directory: Directory(directory),
             lumps,
             lump_index,
+            was_zip,
         })
     }
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> WadResult<()> {
         let path = path.as_ref();
-        let mut f = File::create(path).map_err(WadError::CouldntWriteHeader)?;
+        let f = File::create(path).map_err(WadError::CouldntWriteHeader)?;
+        let mut writer: Box<dyn Write> = if self.was_zip {
+            let mut zw = ZipWriter::new(f);
+            zw.start_file("output.wad", FileOptions::default()).unwrap();
+            Box::new(zw)
+        } else {
+            Box::new(f)
+        };
         let header = WadHeader {
             num_lumps: self.directory.0.len() as i32,
             directory_offset: 12,
         };
-        header.write(&mut f)?;
+        header.write(writer.as_mut())?;
 
         let mut offset = 12 + self.directory.0.len() * 16;
         for lump in &self.lumps {
@@ -254,12 +265,12 @@ impl Wad {
                 size: lump.data.len() as i32,
                 name: lump.name.clone(),
             };
-            entry.write(&mut f)?;
+            entry.write(writer.as_mut())?;
             offset += lump.data.len();
         }
 
         for lump in &self.lumps {
-            lump.write(&mut f)?;
+            lump.write(writer.as_mut())?;
         }
 
         Ok(())
