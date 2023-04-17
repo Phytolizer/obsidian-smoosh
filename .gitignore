@@ -2,3 +2,4 @@ Cargo.lock
 target/
 test_wads/
 *.wad
+*.pk3
