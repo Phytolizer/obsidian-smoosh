@@ -117,21 +117,28 @@ impl<'wad, 'res> Iterator for MapIterator<'wad, 'res> {
                 scripts,
             }));
         }
-        // must be UDMF then...
-        if let Some(textmap) = self
-            .wad
-            .lumps
-            .get(self.last_idx + 1)
-            .and_then(|lump| (lump.name == "TEXTMAP").then(|| lump))
-        {
-            // MAP01, TEXTMAP, ENDMAP
-            self.last_idx += 3;
-            result = Some(Map::Udmf(textmap));
+        if result.is_none() {
+            // must be UDMF then...
+            if let Some(textmap) = self
+                .wad
+                .lumps
+                .get(self.last_idx + 1)
+                .and_then(|lump| (lump.name == "TEXTMAP").then(|| lump))
+            {
+                // MAP01, TEXTMAP, ENDMAP
+                self.last_idx += 3;
+                result = Some(Map::Udmf(textmap));
+            }
         }
 
         if result.is_none() {
             self.resource_lumps.insert(maplump.name.clone(), maplump);
             self.last_idx += 1;
+            while self.last_idx < self.wad.lumps.len() {
+                let lump = &self.wad.lumps[self.last_idx];
+                self.resource_lumps.insert(lump.name.clone(), lump);
+                self.last_idx += 1;
+            }
         }
         result
     }
