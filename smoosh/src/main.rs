@@ -67,7 +67,6 @@ impl<'wad> Iterator for MapIterator<'wad> {
                     // success
                     EitherOrBoth::Right(_) => break,
                     EitherOrBoth::Both(expected_name, lump) => {
-                        dbg!(&lump.name);
                         if lump.name != expected_name {
                             // mismatch
                             break 'check_binary;
@@ -148,4 +147,5 @@ fn main() {
         .map(|wad| get_all_maps(wad))
         .flatten()
         .collect_vec();
+    dbg!(maps.len());
 }
