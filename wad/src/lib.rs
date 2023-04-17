@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
@@ -146,10 +147,10 @@ impl DirectoryEntry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lump {
-    name: String,
-    data: Vec<u8>,
+    pub name: String,
+    pub data: Vec<u8>,
 }
 
 impl Lump {
@@ -178,6 +179,7 @@ impl Lump {
 pub struct Wad {
     pub directory: Directory,
     pub lumps: Vec<Lump>,
+    pub lump_index: HashMap<String, usize>,
 }
 
 impl Wad {
@@ -198,13 +200,16 @@ impl Wad {
         }
 
         let mut lumps = Vec::with_capacity(header.num_lumps as usize);
+        let mut lump_index = HashMap::new();
         for entry in &directory {
+            lump_index.insert(entry.name.clone(), lumps.len());
             lumps.push(Lump::new(&mut f, entry)?);
         }
 
         Ok(Wad {
             directory: Directory(directory),
             lumps,
+            lump_index,
         })
     }
 
