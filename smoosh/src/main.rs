@@ -1,6 +1,7 @@
 use clap::Parser;
 use itertools::{EitherOrBoth, Itertools};
-use std::{collections::HashMap, path::PathBuf};
+use linked_hash_map::LinkedHashMap;
+use std::path::PathBuf;
 use wad::{Lump, Wad};
 
 #[derive(Debug, clap::Parser)]
@@ -34,7 +35,7 @@ enum Map<'wad> {
 struct MapIterator<'wad, 'res> {
     wad: &'wad Wad,
     last_idx: usize,
-    resource_lumps: &'res mut HashMap<String, &'wad Lump>,
+    resource_lumps: &'res mut LinkedHashMap<String, &'wad Lump>,
 }
 
 const BINARY_MAP_SEQUENCE: &[&str] = &[
@@ -137,7 +138,7 @@ impl<'wad, 'res> Iterator for MapIterator<'wad, 'res> {
 
 fn get_all_maps<'wad, 'res>(
     wad: &'wad Wad,
-    resource_lumps: &'res mut HashMap<String, &'wad Lump>,
+    resource_lumps: &'res mut LinkedHashMap<String, &'wad Lump>,
 ) -> MapIterator<'wad, 'res> {
     MapIterator {
         wad,
@@ -153,11 +154,13 @@ fn main() {
         .iter()
         .map(|path| Wad::new(path).unwrap())
         .collect_vec();
-    let mut resource_lumps = HashMap::new();
+    let mut resource_lumps = LinkedHashMap::new();
     let maps = wads
         .iter()
         .map(|wad| get_all_maps(wad, &mut resource_lumps).collect_vec())
         .flatten()
         .collect_vec();
-    dbg!(resource_lumps.len());
+    for lump in resource_lumps.keys() {
+        dbg!(lump);
+    }
 }

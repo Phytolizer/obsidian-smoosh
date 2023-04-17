@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.2.2", features = ["derive", "cargo"] }
 itertools = "0.10.5"
+linked-hash-map = "0.5.6"
 wad = { version = "0.1.0", path = "../wad" }
