@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::Cursor;
 use std::io::Read;
 use std::io::Seek;
@@ -11,9 +12,9 @@ use std::string::FromUtf8Error;
 use byteorder::LittleEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
+use zip::write::FileOptions;
 use zip::ZipArchive;
 use zip::ZipWriter;
-use zip::write::FileOptions;
 
 trait FileLike: std::io::Read + std::io::Seek {}
 impl<T> FileLike for T where T: Read + Seek {}
@@ -190,6 +191,26 @@ pub struct Wad {
 }
 
 impl Wad {
+    pub fn new_empty(was_zip: bool) -> Self {
+        Self {
+            directory: Directory(Vec::new()),
+            lumps: Vec::new(),
+            lump_index: HashMap::new(),
+            was_zip,
+        }
+    }
+
+    pub fn add_lump(&mut self, lump: Lump) {
+        self.lump_index.insert(lump.name.clone(), self.lumps.len());
+        self.lumps.push(lump);
+        self.directory.0.push(DirectoryEntry {
+            // dummy entry. this is recomputed when writing anyway.
+            offset: 0,
+            size: 0,
+            name: String::new(),
+        });
+    }
+
     /// Opens a WAD file.
     pub fn new<P>(path: P) -> WadResult<Self>
     where
