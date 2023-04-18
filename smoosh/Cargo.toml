@@ -9,4 +9,5 @@ edition = "2021"
 clap = { version = "4.2.2", features = ["derive", "cargo"] }
 itertools = "0.10.5"
 linked-hash-map = "0.5.6"
+rand = "0.8.5"
 wad = { version = "0.1.0", path = "../wad" }
