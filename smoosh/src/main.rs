@@ -17,7 +17,7 @@ impl ValueEnum for Mode {
         &[Self::Concat, Self::Chaos, Self::Slog]
     }
 
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+    fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Concat => PossibleValue::new("concat")
                 .help("Simply concatenate each WAD. May result in jarring difficulty drops."),
@@ -83,12 +83,22 @@ impl<'wad, 'res> Iterator for MapIterator<'wad, 'res> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
         let mut maplump = self.wad.lumps.get(self.last_idx)?;
-        while !maplump.name.starts_with("MAP") {
-            self.resource_lumps.insert(maplump.name.clone(), maplump);
-            self.last_idx += 1;
-            maplump = self.wad.lumps.get(self.last_idx)?;
-        }
-        let orig_slot = maplump.name[3..].parse::<usize>().unwrap();
+        let orig_slot = 'blk: loop {
+            let mut next_map = || -> Option<&Lump> {
+                self.resource_lumps.insert(maplump.name.clone(), maplump);
+                self.last_idx += 1;
+                self.wad.lumps.get(self.last_idx)
+            };
+            while !maplump.name.starts_with("MAP") {
+                maplump = next_map()?;
+            }
+            match maplump.name[3..].parse::<usize>() {
+                Ok(slot) => break 'blk slot,
+                Err(_) => {
+                    maplump = next_map()?;
+                }
+            };
+        };
         'check_binary: {
             let mut lumps = Vec::<&Lump>::new();
             for pair in BINARY_MAP_SEQUENCE
